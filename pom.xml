@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Maven Project Object Model (POM) for LAMB DB - Foundational NoSQL Document Database Prototype.
+    Developed by Vishwas Karode.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<modelVersion>4.0.0</modelVersion>
+
+<!-- Project coordinates -->
+<groupId>com.lambdb</groupId>
+<artifactId>lambdb-nosql-prototype</artifactId>
+<version>0.0.1-SNAPSHOT</version>
+<name>lambdb-nosql-prototype</name>
+<description>A Foundational NoSQL Document Database Prototype by Vishwas Karode</description>
+
+<!-- Project properties, defining Java version and dependency versions -->
+<properties>
+    <java.version>21</java.version>
+    <maven.compiler.source>${java.version}</maven.compiler.source>
+    <maven.compiler.target>${java.version}</maven.compiler.target>
+    <jackson.version>2.17.1</jackson.version> <!-- Stable version for JSON processing -->
+    <junit.jupiter.version>5.11.0</junit.jupiter.version> <!-- For JUnit 5 testing framework -->
+</properties>
+
+<!-- Project dependencies -->
+<dependencies>
+    <!-- Jackson for JSON processing: Essential for converting Java objects to/from JSON documents -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${jackson.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-annotations</artifactId>
+        <version>${jackson.version}</version>
+    </dependency>
+
+    <!-- JUnit Jupiter API for writing tests -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-api</artifactId>
+        <version>${junit.jupiter.version}</version>
+        <scope>test</scope> <!-- This dependency is only needed for compiling and running tests -->
+    </dependency>
+    <!-- JUnit Jupiter Engine for running tests -->
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-engine</artifactId>
+        <version>${junit.jupiter.version}</version>
+        <scope>test</scope> <!-- This dependency is only needed for running tests -->
+    </dependency>
+</dependencies>
+
+<!-- Build configuration for Maven plugins -->
+<build>
+    <plugins>
+        <!-- Maven Compiler Plugin: Ensures correct Java version is used for compilation -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.11.0</version> <!-- Use a compatible version -->
+            <configuration>
+                <source>${java.version}</source>
+                <target>${java.version}</target>
+            </configuration>
+        </plugin>
+        <!-- Maven Surefire Plugin: For running JUnit tests -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.1.2</version> <!-- Use a compatible version -->
+        </plugin>
+        <!-- Maven Jar Plugin: To create an executable JAR (will be configured later for full release) -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <version>3.3.0</version>
+        </plugin>
+    </plugins>
+</build>
+</project>
