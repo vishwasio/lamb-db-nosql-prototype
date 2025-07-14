@@ -80,7 +80,7 @@ If you wish to delve into the codebase or build the project from its source:
 ### 1. Clone the repository:
 
 ```bash
-git clone [https://github.com/awkward-student/LambDB-NoSQL-Prototype.git](https://github.com/YOUR_GITHUB_USERNAME/LambDB-NoSQL-Prototype.git)
+git clone [https://github.com/awkward-student/LambDB-NoSQL-Prototype.git](https://github.com/awkward-student/LambDB-NoSQL-Prototype.git)
 cd LambDB-NoSQL-Prototype
 ```
 
