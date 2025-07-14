@@ -1,103 +1,114 @@
 package com.lambdb.core.query;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.lambdb.core.JsonUtil; // Corrected import
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.lambdb.core.DBConstants; // Import DBConstants for operator names
+import com.lambdb.core.JsonUtil;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * QueryParser.java
  * Author: Vishwas Karode
  * Description:
  * This class is responsible for parsing LAMBQL (LAMB Query Language) command strings.
+ * It now supports enhanced query capabilities:
+ * - Projections: `SELECT field1, field2 FROM collection;`
+ * - Advanced Filter Operators: `$gt`, `$lt`, `$ne`, `$in` within `WHERE` clauses.
  * It takes a raw string input, validates its basic structure, extracts keywords and data,
- * and converts it into a structured {@link Query} object that the interpreter can understand.
- *
- * Supported commands: CREATE COLLECTION, INSERT INTO ... VALUES, SELECT * FROM ... [WHERE],
- * UPDATE ... SET ... WHERE ..., DELETE FROM ... WHERE ..., DELETE FROM ... (collection).
- * The parser is case-insensitive for keywords.
+ * and converts it into a structured {@link Query} object using static factory methods.
  */
 public class QueryParser {
 
     // --- LAMBQL Keyword Constants (Uppercased for case-insensitive matching) ---
-    private static final String CREATE_COLLECTION_PREFIX = "CREATE COLLECTION ";
-    private static final String INSERT_INTO_PREFIX = "INSERT INTO ";
-    private static final String VALUES_KEYWORD = " VALUES ";
-    private static final String SELECT_FROM_PREFIX = "SELECT * FROM ";
-    private static final String WHERE_KEYWORD = " WHERE ";
-    private static final String UPDATE_PREFIX = "UPDATE ";
-    private static final String SET_KEYWORD = " SET ";
-    private static final String DELETE_FROM_PREFIX = "DELETE FROM ";
+    private static final String CREATE_COLLECTION_KW = "CREATE COLLECTION ";
+    private static final String INSERT_INTO_KW = "INSERT INTO ";
+    private static final String VALUES_KW = " VALUES ";
+    private static final String SELECT_KW = "SELECT "; // Changed from SELECT * FROM
+    private static final String FROM_KW = " FROM ";
+    private static final String WHERE_KW = " WHERE ";
+    private static final String UPDATE_KW = "UPDATE ";
+    private static final String SET_KW = " SET ";
+    private static final String DELETE_FROM_KW = "DELETE FROM ";
     private static final String SEMICOLON = ";"; // All commands must end with a semicolon
 
     /**
      * Parses a LAMBQL command string.
      * This is the primary method to convert a raw query string into a structured Query object.
      *
-     * @param command The LAMBQL command string (e.g., "INSERT INTO users VALUES { \"name\": \"Alice\" };").
+     * @param command The LAMBQL command string.
      * @return A {@link Query} object representing the parsed command.
      * @throws IllegalArgumentException If the command format is invalid or required parts are missing.
      * @throws IOException If JSON parsing within the command string fails (e.g., malformed JSON in VALUES or WHERE/SET clauses).
      */
     public Query parse(String command) throws IllegalArgumentException, IOException {
-        // Step 1: Clean and standardize the command string
-        // Trim whitespace and convert to uppercase for case-insensitive keyword matching.
-        String cleanedCommand = command.trim().toUpperCase(Locale.ROOT);
+        String originalCommand = command; // Keep original for error messages
+        String cleanedCommand = command.trim();
 
-        // Step 2: Validate ending semicolon
         if (!cleanedCommand.endsWith(SEMICOLON)) {
             throw new IllegalArgumentException("Invalid LAMBQL command by Vishwas Karode: All commands must end with a semicolon (';').");
         }
-        // Remove the semicolon for easier parsing of the command body.
-        cleanedCommand = cleanedCommand.substring(0, cleanedCommand.length() - 1).trim();
+        cleanedCommand = cleanedCommand.substring(0, cleanedCommand.length() - 1).trim(); // Remove semicolon
 
-        // Step 3: Identify the command type and delegate to specific parsers
-        if (cleanedCommand.startsWith(CREATE_COLLECTION_PREFIX)) {
-            return parseCreateCollection(cleanedCommand);
-        } else if (cleanedCommand.startsWith(INSERT_INTO_PREFIX)) {
+        // Convert the command body to uppercase for keyword matching, but be careful with JSON parts.
+        // We will process JSON parts after extracting them.
+        String commandForKeywordMatching = cleanedCommand.toUpperCase(Locale.ROOT);
+
+
+        if (commandForKeywordMatching.startsWith(CREATE_COLLECTION_KW)) {
+            return parseCreateCollection(commandForKeywordMatching);
+        } else if (commandForKeywordMatching.startsWith(INSERT_INTO_KW)) {
+            // INSERT command's VALUES part contains JSON, so use original cleanedCommand
             return parseInsert(cleanedCommand);
-        } else if (cleanedCommand.startsWith(SELECT_FROM_PREFIX)) {
+        } else if (commandForKeywordMatching.startsWith(SELECT_KW)) {
+            // SELECT command's WHERE part contains JSON, so use original cleanedCommand
             return parseSelect(cleanedCommand);
-        } else if (cleanedCommand.startsWith(UPDATE_PREFIX)) {
+        } else if (commandForKeywordMatching.startsWith(UPDATE_KW)) {
+            // UPDATE command's SET and WHERE parts contain JSON, so use original cleanedCommand
             return parseUpdate(cleanedCommand);
-        } else if (cleanedCommand.startsWith(DELETE_FROM_PREFIX)) {
-            // DELETE can be either DELETE DOCUMENT (with WHERE) or DELETE COLLECTION (without WHERE)
+        } else if (commandForKeywordMatching.startsWith(DELETE_FROM_KW)) {
+            // DELETE command's WHERE part contains JSON, so use original cleanedCommand
             return parseDelete(cleanedCommand);
         } else {
-            // If no known command prefix matches, it's an UNKNOWN query.
-            System.err.println("[QueryParser] Unknown command pattern: " + command);
-            return new Query(QueryType.UNKNOWN, null); // Return unknown type for unparseable commands.
+            System.err.println("[QueryParser] Unknown command pattern by Vishwas Karode: " + originalCommand);
+            return new Query(QueryType.UNKNOWN, null, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
         }
     }
 
     /**
      * Parses a 'CREATE COLLECTION' command.
      * Expected format: CREATE COLLECTION <collectionName>;
+     * Uses Query.createCollectionQuery() static factory method.
      */
-    private Query parseCreateCollection(String command) {
-        String collectionName = command.substring(CREATE_COLLECTION_PREFIX.length()).trim();
+    private Query parseCreateCollection(String commandForKeywordMatching) {
+        String collectionName = commandForKeywordMatching.substring(CREATE_COLLECTION_KW.length()).trim();
         if (collectionName.isEmpty()) {
             throw new IllegalArgumentException("Invalid CREATE COLLECTION command: Collection name is missing.");
         }
-        return new Query(QueryType.CREATE_COLLECTION, collectionName);
+        return Query.createCollectionQuery(QueryType.CREATE_COLLECTION, collectionName);
     }
 
     /**
      * Parses an 'INSERT INTO ... VALUES ...' command.
      * Expected format: INSERT INTO <collectionName> VALUES { <jsonDocument> };
+     * Uses Query.createInsertQuery() static factory method.
      */
-    private Query parseInsert(String command) throws IOException {
-        int valuesIndex = command.indexOf(VALUES_KEYWORD);
+    private Query parseInsert(String cleanedCommand) throws IOException {
+        // Find the index of " VALUES "
+        int valuesIndex = cleanedCommand.toUpperCase(Locale.ROOT).indexOf(VALUES_KW);
         if (valuesIndex == -1) {
-            throw new IllegalArgumentException("Invalid INSERT command: Missing 'VALUES' keyword.");
+            throw new IllegalArgumentException("Invalid INSERT command by Vishwas Karode: Missing '" + VALUES_KW.trim() + "' keyword.");
         }
 
-        String collectionPart = command.substring(INSERT_INTO_PREFIX.length(), valuesIndex).trim();
-        String documentData = command.substring(valuesIndex + VALUES_KEYWORD.length()).trim();
+        String collectionPart = cleanedCommand.substring(INSERT_INTO_KW.length(), valuesIndex).trim();
+        String documentData = cleanedCommand.substring(valuesIndex + VALUES_KW.length()).trim();
 
-        // Basic validation for extracted parts
         if (collectionPart.isEmpty()) {
             throw new IllegalArgumentException("Invalid INSERT command: Collection name missing.");
         }
@@ -105,69 +116,94 @@ public class QueryParser {
             throw new IllegalArgumentException("Invalid INSERT command: Document data (JSON) is missing.");
         }
 
-        // Attempt to parse documentData to ensure it's valid JSON.
-        // If it's not valid, JsonUtil.fromJsonString will throw an IOException.
-        JsonUtil.fromJsonString(documentData); // Just parse to validate, not storing the node here.
+        // Validate JSON data for insert
+        JsonUtil.fromJsonString(documentData);
 
-        return new Query(QueryType.INSERT_DOCUMENT, collectionPart, documentData);
+        return Query.createInsertQuery(collectionPart, documentData);
     }
 
     /**
-     * Parses a 'SELECT * FROM ... [WHERE ...]' command.
-     * Expected formats: SELECT * FROM <collectionName>; OR SELECT * FROM <collectionName> WHERE { <jsonFilter> };
+     * Parses a 'SELECT ... FROM ... [WHERE ...]' command.
+     * Expected formats:
+     * - SELECT * FROM <collectionName>;
+     * - SELECT field1, field2 FROM <collectionName>;
+     * - SELECT * FROM <collectionName> WHERE { <jsonFilter> };
+     * - SELECT field1, field2 FROM <collectionName> WHERE { <jsonFilter> };
+     * Uses Query.createSelectQuery() static factory method.
      */
-    private Query parseSelect(String command) throws IOException {
-        int whereIndex = command.indexOf(WHERE_KEYWORD);
+    private Query parseSelect(String cleanedCommand) throws IOException {
+        int fromIndex = cleanedCommand.toUpperCase(Locale.ROOT).indexOf(FROM_KW);
+        if (fromIndex == -1) {
+            throw new IllegalArgumentException("Invalid SELECT command by Vishwas Karode: Missing '" + FROM_KW.trim() + "' keyword.");
+        }
+
+        // Extract projection fields part (between "SELECT " and " FROM ")
+        String projectionPart = cleanedCommand.substring(SELECT_KW.length(), fromIndex).trim();
+        Optional<List<String>> projectionFields = Optional.empty();
+
+        if (!projectionPart.equals("*")) {
+            // Parse comma-separated fields for projection
+            List<String> fields = Arrays.stream(projectionPart.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+            if (fields.isEmpty()) {
+                throw new IllegalArgumentException("Invalid SELECT command: Projection fields are empty.");
+            }
+            projectionFields = Optional.of(fields);
+        }
+
+        // Extract the part after " FROM " to find collection name and WHERE clause
+        String remainingCommand = cleanedCommand.substring(fromIndex + FROM_KW.length()).trim();
+        int whereIndex = remainingCommand.toUpperCase(Locale.ROOT).indexOf(WHERE_KW);
 
         String collectionName;
         Optional<JsonNode> filter = Optional.empty();
-        QueryType type;
 
         if (whereIndex != -1) {
-            // Command includes a WHERE clause, so it's a filtered select.
-            collectionName = command.substring(SELECT_FROM_PREFIX.length(), whereIndex).trim();
-            String filterString = command.substring(whereIndex + WHERE_KEYWORD.length()).trim();
+            // Command includes a WHERE clause
+            collectionName = remainingCommand.substring(0, whereIndex).trim();
+            String filterString = remainingCommand.substring(whereIndex + WHERE_KW.length()).trim();
             if (filterString.isEmpty()) {
                 throw new IllegalArgumentException("Invalid SELECT command: Empty WHERE clause provided.");
             }
             filter = Optional.of(JsonUtil.fromJsonString(filterString)); // Parse the filter JSON
-            type = QueryType.SELECT_FILTERED;
         } else {
-            // Command is a simple SELECT ALL.
-            collectionName = command.substring(SELECT_FROM_PREFIX.length()).trim();
-            type = QueryType.SELECT_ALL;
+            // No WHERE clause, simply extract collection name
+            collectionName = remainingCommand.trim();
         }
 
         if (collectionName.isEmpty()) {
             throw new IllegalArgumentException("Invalid SELECT command: Collection name is missing.");
         }
-        // For SELECT queries, documentData and updateData are not applicable.
-        return new Query(type, collectionName, Optional.empty(), filter, Optional.empty());
+
+        return Query.createSelectQuery(collectionName, filter, projectionFields);
     }
 
     /**
      * Parses an 'UPDATE ... SET ... WHERE ...' command.
      * Expected format: UPDATE <collectionName> SET { <jsonUpdateData> } WHERE { <jsonFilter> };
+     * Uses Query.createUpdateQuery() static factory method.
      */
-    private Query parseUpdate(String command) throws IOException {
-        int setIndex = command.indexOf(SET_KEYWORD);
+    private Query parseUpdate(String cleanedCommand) throws IOException {
+        int setIndex = cleanedCommand.toUpperCase(Locale.ROOT).indexOf(SET_KW);
         if (setIndex == -1) {
-            throw new IllegalArgumentException("Invalid UPDATE command: Missing 'SET' keyword.");
+            throw new IllegalArgumentException("Invalid UPDATE command by Vishwas Karode: Missing '" + SET_KW.trim() + "' keyword.");
         }
 
-        String collectionPart = command.substring(UPDATE_PREFIX.length(), setIndex).trim();
+        String collectionPart = cleanedCommand.substring(UPDATE_KW.length(), setIndex).trim();
         if (collectionPart.isEmpty()) {
             throw new IllegalArgumentException("Invalid UPDATE command: Collection name missing.");
         }
 
-        String remaining = command.substring(setIndex + SET_KEYWORD.length()).trim();
-        int whereIndex = remaining.indexOf(WHERE_KEYWORD);
+        String remaining = cleanedCommand.substring(setIndex + SET_KW.length()).trim();
+        int whereIndex = remaining.toUpperCase(Locale.ROOT).indexOf(WHERE_KW);
         if (whereIndex == -1) {
-            throw new IllegalArgumentException("Invalid UPDATE command: Missing 'WHERE' clause. Updates must be targeted.");
+            throw new IllegalArgumentException("Invalid UPDATE command by Vishwas Karode: Missing '" + WHERE_KW.trim() + "' clause. Updates must be targeted.");
         }
 
         String updateDataString = remaining.substring(0, whereIndex).trim();
-        String filterString = remaining.substring(whereIndex + WHERE_KEYWORD.length()).trim();
+        String filterString = remaining.substring(whereIndex + WHERE_KW.length()).trim();
 
         if (updateDataString.isEmpty()) {
             throw new IllegalArgumentException("Invalid UPDATE command: Missing update data (JSON for SET clause).");
@@ -179,27 +215,28 @@ public class QueryParser {
         JsonNode updateData = JsonUtil.fromJsonString(updateDataString); // Parse update data JSON
         JsonNode filter = JsonUtil.fromJsonString(filterString);       // Parse filter JSON
 
-        return new Query(QueryType.UPDATE_DOCUMENT, collectionPart, Optional.empty(), Optional.of(filter), Optional.of(updateData));
+        return Query.createUpdateQuery(collectionPart, filter, updateData);
     }
 
     /**
      * Parses a 'DELETE FROM ... [WHERE ...]' command.
-     * Can be: DELETE FROM <collectionName>; (deletes collection) OR DELETE FROM <collectionName> WHERE { <jsonFilter> }; (deletes documents)
+     * Can be: DELETE FROM <collectionName>; (deletes collection) OR DELETE FROM <collectionName> WHERE { <jsonFilter> }; (deletes documents).
+     * Uses Query.createCollectionQuery() or Query.createDeleteDocumentQuery() static factory methods.
      */
-    private Query parseDelete(String command) throws IOException {
-        int whereIndex = command.indexOf(WHERE_KEYWORD);
+    private Query parseDelete(String cleanedCommand) throws IOException {
+        int whereIndex = cleanedCommand.toUpperCase(Locale.ROOT).indexOf(WHERE_KW);
 
         if (whereIndex == -1) {
             // This suggests a 'DELETE FROM <collectionName>;' command (delete collection).
-            String collectionName = command.substring(DELETE_FROM_PREFIX.length()).trim();
+            String collectionName = cleanedCommand.substring(DELETE_FROM_KW.length()).trim();
             if (collectionName.isEmpty()) {
                 throw new IllegalArgumentException("Invalid DELETE command: Collection name missing for collection deletion.");
             }
-            return new Query(QueryType.DELETE_COLLECTION, collectionName);
+            return Query.createCollectionQuery(QueryType.DELETE_COLLECTION, collectionName);
         } else {
             // This is a 'DELETE FROM <collectionName> WHERE { <jsonFilter> };' command (delete documents).
-            String collectionPart = command.substring(DELETE_FROM_PREFIX.length(), whereIndex).trim();
-            String filterString = command.substring(whereIndex + WHERE_KEYWORD.length()).trim();
+            String collectionPart = cleanedCommand.substring(DELETE_FROM_KW.length(), whereIndex).trim();
+            String filterString = cleanedCommand.substring(whereIndex + WHERE_KW.length()).trim();
 
             if (collectionPart.isEmpty()) {
                 throw new IllegalArgumentException("Invalid DELETE command: Collection name missing for document deletion.");
@@ -208,7 +245,7 @@ public class QueryParser {
                 throw new IllegalArgumentException("Invalid DELETE command: Missing filter data (JSON for WHERE clause).");
             }
             JsonNode filter = JsonUtil.fromJsonString(filterString); // Parse filter JSON
-            return new Query(QueryType.DELETE_DOCUMENT, collectionPart, Optional.empty(), Optional.of(filter), Optional.empty());
+            return Query.createDeleteDocumentQuery(collectionPart, filter);
         }
     }
 }
