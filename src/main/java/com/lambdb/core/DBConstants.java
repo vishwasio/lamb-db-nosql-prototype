@@ -22,6 +22,8 @@ public class DBConstants {
     // Similar to '_id' in MongoDB, every document in LAMB DB will have this field.
     public static final String ID_FIELD_NAME = "_id";
 
+    public static final String INDEX_FILE_PREFIX = "_index_"; // Prefix for index files
+
     // LAMBQL Filter Operators (Used in WHERE clauses)
     // Adding new query capabilities!
     public static final String GT_OPERATOR = "$gt";   // Greater Than
