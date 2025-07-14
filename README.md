@@ -66,7 +66,7 @@ Upon launching the application, you will be greeted with the initial prompt:
 Type 'initializecli' to begin interactive console mode.
 Type 'help' for an introduction to LAMBQL and commands.
 Type 'exit' to quit the application.
->```
+```
 
 * `initializecli`: Type this to enter the interactive LAMBQL console, where you can issue database commands.
 * `help`: Provides detailed information on all LAMBQL syntax and special console commands, including how to run the automated demo.
