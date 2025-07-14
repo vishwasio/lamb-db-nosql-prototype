@@ -85,4 +85,20 @@ public class JsonUtil {
         }
         return documentNode;
     }
+
+    /**
+     * Converts an immutable JsonNode to a mutable ObjectNode.
+     * This is useful when you need to modify an existing document (JsonNode)
+     * by adding or changing fields.
+     * @param node The JsonNode to convert.
+     * @return An ObjectNode that can be modified. If the input node is not an object,
+     * it throws an IllegalArgumentException.
+     */
+    public static ObjectNode toMutableObjectNode(JsonNode node) {
+        if (node.isObject()) {
+            // CORRECTED LINE: Using our OBJECT_MAPPER instance
+            return (ObjectNode) OBJECT_MAPPER.valueToTree(node);
+        }
+        throw new IllegalArgumentException("Provided JsonNode is not an object and cannot be converted to a mutable ObjectNode.");
+    }
 }

@@ -1,7 +1,9 @@
 package com.lambdb.core.collection;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.NumericNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import com.lambdb.core.DBConstants;
 import com.lambdb.core.JsonUtil;
 
@@ -9,217 +11,287 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 /**
  * CollectionManager.java
  * Author: Vishwas Karode
  * Description:
- * Manages the lifecycle and operations of documents within a single collection.
- * Each collection is represented as a directory on the file system, and documents
- * within it are stored as individual JSON files.
+ * Manages operations for a single collection within the LAMB DB system.
+ * This includes CRUD operations (Create, Retrieve, Update, Delete) for documents.
+ * Documents are stored as individual JSON files within a collection's directory.
+ * This version enhances `findDocuments` to support advanced filtering operators
+ * like $gt, $lt, $ne, and $in.
  */
 public class CollectionManager {
 
-    private final String collectionName; // The name of this collection (e.g., "users", "products")
-    private final Path collectionPath;   // The file system path to this collection's directory
+    private final String collectionName;
+    private final Path collectionPath;
 
     /**
      * Constructor for CollectionManager.
-     * @param collectionName The name of the collection.
-     * @param dbRootPath The root path of the entire database.
+     * @param collectionName The name of the collection this manager handles.
+     * @param dbRootDir The root directory where all database collections are stored.
+     * @throws IOException If the collection directory cannot be created or accessed.
      */
-    public CollectionManager(String collectionName, Path dbRootPath) {
+    public CollectionManager(String collectionName, String dbRootDir) throws IOException {
+        if (collectionName == null || collectionName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Collection name cannot be null or empty.");
+        }
         this.collectionName = collectionName;
-        // Resolve the full path to this collection's directory within the DB root.
-        this.collectionPath = dbRootPath.resolve(collectionName);
+        this.collectionPath = Paths.get(dbRootDir, collectionName);
+
+        // Ensure the collection directory exists.
+        if (!Files.exists(this.collectionPath)) {
+            Files.createDirectories(this.collectionPath);
+            System.out.println("[CollectionManager] Created directory for collection: " + collectionName);
+        }
     }
 
-    /**
-     * Initializes the collection by ensuring its corresponding directory exists on the file system.
-     * If the directory doesn't exist, it will be created.
-     * @return true if the directory was created or already exists, false otherwise.
-     * @throws IOException If an I/O error occurs during directory creation.
-     */
-    public boolean init() throws IOException {
-        if (!Files.exists(collectionPath)) {
-            Files.createDirectories(collectionPath); // Create the directory and any necessary parent directories
-            System.out.println("[CollectionManager] Collection directory created: " + collectionPath);
-            return true;
-        }
-        System.out.println("[CollectionManager] Collection directory already exists: " + collectionPath);
-        return false;
+    public String getCollectionName() {
+        return collectionName;
     }
 
     /**
      * Inserts a new document into the collection.
-     * If the provided JSON string does not contain an '_id' field, a new UUID will be generated and assigned.
-     * The document is then stored as a JSON file named after its '_id' in the collection's directory.
+     * If the document JSON already contains an '_id' field, it is used.
+     * Otherwise, a new UUID is generated for '_id'.
      *
-     * @param documentJsonString The JSON string representing the document to insert.
-     * @return The unique '_id' of the inserted document.
+     * @param documentJsonString The JSON string representing the document.
+     * @return The _id of the inserted document.
      * @throws IOException If an I/O error occurs during file writing.
-     * @throws IllegalArgumentException If a document with the same '_id' already exists in this collection.
+     * @throws IllegalArgumentException If the provided _id already exists or JSON is malformed.
      */
-    public String insertDocument(String documentJsonString) throws IOException {
-        JsonNode documentNode = JsonUtil.fromJsonString(documentJsonString); // Parse the input JSON string
-        documentNode = JsonUtil.ensureDocumentId(documentNode); // Ensure the document has a unique _id
+    public String insertDocument(String documentJsonString) throws IOException, IllegalArgumentException {
+        JsonNode documentNode = JsonUtil.fromJsonString(documentJsonString);
+        String id;
 
-        String docId = documentNode.get(DBConstants.ID_FIELD_NAME).asText(); // Get the _id
-        // Construct the file path for the document (e.g., collection_dir/document_id.json)
-        File docFile = collectionPath.resolve(docId + DBConstants.DOCUMENT_FILE_EXTENSION).toFile();
-
-        // Prevent overwriting existing documents with insert (upsert logic would be different)
-        if (docFile.exists()) {
-            throw new IllegalArgumentException("Document with _id '" + docId + "' already exists in collection '" + collectionName + "'. Use update for modification.");
+        // Check if _id is provided in the document
+        if (documentNode.has(DBConstants.ID_FIELD_NAME) && !documentNode.get(DBConstants.ID_FIELD_NAME).isNull()) {
+            id = documentNode.get(DBConstants.ID_FIELD_NAME).asText();
+            if (Files.exists(getDocumentPath(id))) {
+                throw new IllegalArgumentException("Document with _id '" + id + "' already exists in collection '" + collectionName + "'.");
+            }
+        } else {
+            // Generate a new UUID if _id is not provided
+            id = UUID.randomUUID().toString();
+            // Add _id to the document (create a mutable copy if original is immutable)
+            documentNode = JsonUtil.addIdToNode(documentNode, id);
         }
 
-        JsonUtil.writeToFile(documentNode, docFile); // Write the JSON document to the file
-        System.out.println("[CollectionManager] Inserted document '" + docId + "' into collection '" + collectionName + "'");
-        return docId;
+        Path documentPath = getDocumentPath(id);
+        Files.writeString(documentPath, JsonUtil.toPrettyJson(documentNode));
+        System.out.println("[CollectionManager] Document inserted: " + id + " into '" + collectionName + "'");
+        return id;
     }
 
     /**
-     * Retrieves a document from the collection based on its unique '_id'.
+     * Retrieves a document by its _id.
      *
-     * @param documentId The '_id' of the document to retrieve.
-     * @return An Optional containing the JsonNode of the document if found, otherwise an empty Optional.
+     * @param id The _id of the document to retrieve.
+     * @return An Optional containing the JsonNode if found, or empty if not found.
      * @throws IOException If an I/O error occurs during file reading.
      */
-    public Optional<JsonNode> getDocument(String documentId) throws IOException {
-        // Construct the expected file path for the document
-        File docFile = collectionPath.resolve(documentId + DBConstants.DOCUMENT_FILE_EXTENSION).toFile();
-
-        if (docFile.exists() && docFile.isFile()) { // Check if the file exists and is a regular file
-            System.out.println("[CollectionManager] Retrieved document '" + documentId + "' from collection '" + collectionName + "'");
-            return Optional.of(JsonUtil.fromJsonFile(docFile)); // Read and parse the JSON file
+    public Optional<JsonNode> getDocument(String id) throws IOException {
+        Path documentPath = getDocumentPath(id);
+        if (Files.exists(documentPath)) {
+            String jsonContent = Files.readString(documentPath);
+            System.out.println("[CollectionManager] Retrieved document: " + id + " from '" + collectionName + "'");
+            return Optional.of(JsonUtil.fromJsonString(jsonContent));
         }
-        System.out.println("[CollectionManager] Document '" + documentId + "' not found in collection '" + collectionName + "'");
-        return Optional.empty(); // Document not found
+        System.out.println("[CollectionManager] Document not found: " + id + " in '" + collectionName + "'");
+        return Optional.empty();
     }
 
     /**
-     * Retrieves all documents currently stored within this collection.
-     * Iterates through all files in the collection's directory and parses them as JSON documents.
+     * Updates an existing document. The documentJsonString must contain the _id.
+     * The new content completely replaces the old content of the document.
      *
-     * @return A List of JsonNode objects, each representing a document in the collection.
-     * @throws IOException If an I/O error occurs during directory listing or file reading.
+     * @param id The _id of the document to update.
+     * @param documentJsonString The new JSON content for the document.
+     * @return true if the document was updated, false if not found.
+     * @throws IOException If an I/O error occurs during file writing.
+     * @throws IllegalArgumentException If the provided JSON is malformed or its _id doesn't match.
+     */
+    public boolean updateDocument(String id, String documentJsonString) throws IOException, IllegalArgumentException {
+        Path documentPath = getDocumentPath(id);
+        if (!Files.exists(documentPath)) {
+            System.out.println("[CollectionManager] Update failed: Document " + id + " not found in '" + collectionName + "'");
+            return false;
+        }
+
+        JsonNode newDocumentNode = JsonUtil.fromJsonString(documentJsonString);
+        // Ensure the _id in the updated JSON matches the target ID.
+        if (!newDocumentNode.has(DBConstants.ID_FIELD_NAME) || !newDocumentNode.get(DBConstants.ID_FIELD_NAME).asText().equals(id)) {
+            throw new IllegalArgumentException("Document JSON for update must contain matching '_id' field: " + id);
+        }
+
+        Files.writeString(documentPath, JsonUtil.toPrettyJson(newDocumentNode));
+        System.out.println("[CollectionManager] Document updated: " + id + " in '" + collectionName + "'");
+        return true;
+    }
+
+    /**
+     * Deletes a document by its _id.
+     *
+     * @param id The _id of the document to delete.
+     * @return true if the document was deleted, false if not found.
+     * @throws IOException If an I/O error occurs during file deletion.
+     */
+    public boolean deleteDocument(String id) throws IOException {
+        Path documentPath = getDocumentPath(id);
+        if (Files.exists(documentPath)) {
+            Files.delete(documentPath);
+            System.out.println("[CollectionManager] Document deleted: " + id + " from '" + collectionName + "'");
+            return true;
+        }
+        System.out.println("[CollectionManager] Delete failed: Document " + id + " not found in '" + collectionName + "'");
+        return false;
+    }
+
+    /**
+     * Retrieves all documents from this collection.
+     *
+     * @return A list of all documents as JsonNode objects.
+     * @throws IOException If an I/O error occurs during file reading.
      */
     public List<JsonNode> getAllDocuments() throws IOException {
         List<JsonNode> documents = new ArrayList<>();
-        // Use Files.list for efficient directory traversal
-        try (Stream<Path> paths = Files.list(collectionPath)) {
-            paths.filter(Files::isRegularFile) // Only consider regular files
-                    .filter(p -> p.toString().endsWith(DBConstants.DOCUMENT_FILE_EXTENSION)) // Only consider JSON files
-                    .forEach(path -> {
+        try (Stream<Path> paths = Files.walk(collectionPath, 1)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(DBConstants.DOCUMENT_FILE_EXTENSION))
+                    .forEach(p -> {
                         try {
-                            documents.add(JsonUtil.fromJsonFile(path.toFile())); // Read and add each document
+                            String jsonContent = Files.readString(p);
+                            documents.add(JsonUtil.fromJsonString(jsonContent));
                         } catch (IOException e) {
-                            // Log error but continue processing other files
-                            System.err.println("[CollectionManager] Error reading document file: " + path + " - " + e.getMessage());
+                            System.err.println("[CollectionManager] Error reading document file " + p.getFileName() + ": " + e.getMessage());
                         }
                     });
         }
-        System.out.println("[CollectionManager] Retrieved all " + documents.size() + " documents from collection '" + collectionName + "'");
         return documents;
     }
 
     /**
-     * Updates an existing document identified by its '_id'.
-     * The provided JSON string should contain the full updated document content, including the '_id'.
-     *
-     * @param documentId The '_id' of the document to update.
-     * @param updatedDocumentJsonString The JSON string representing the new content of the document.
-     * @return true if the document was found and successfully updated, false if the document was not found.
-     * @throws IOException If an I/O error occurs during file writing.
-     */
-    public boolean updateDocument(String documentId, String updatedDocumentJsonString) throws IOException {
-        File docFile = collectionPath.resolve(documentId + DBConstants.DOCUMENT_FILE_EXTENSION).toFile();
-
-        if (docFile.exists() && docFile.isFile()) { // Ensure the document exists before attempting to update
-            JsonNode newDocumentNode = JsonUtil.fromJsonString(updatedDocumentJsonString);
-            // Crucially, ensure the _id in the updated content matches the target document's _id.
-            // This prevents accidental _id changes during an update operation.
-            ((ObjectNode) newDocumentNode).put(DBConstants.ID_FIELD_NAME, documentId);
-            JsonUtil.writeToFile(newDocumentNode, docFile); // Overwrite the existing file
-            System.out.println("[CollectionManager] Updated document '" + documentId + "' in collection '" + collectionName + "'");
-            return true;
-        }
-        System.out.println("[CollectionManager] Document '" + documentId + "' not found for update in collection '" + collectionName + "'");
-        return false;
-    }
-
-    /**
-     * Deletes a document from the collection based on its unique '_id'.
-     *
-     * @param documentId The '_id' of the document to delete.
-     * @return true if the document was found and successfully deleted, false if the document was not found.
-     * @throws IOException If an I/O error occurs during file deletion.
-     */
-    public boolean deleteDocument(String documentId) throws IOException {
-        File docFile = collectionPath.resolve(documentId + DBConstants.DOCUMENT_FILE_EXTENSION).toFile();
-
-        if (docFile.exists() && docFile.isFile()) { // Ensure the document exists before attempting to delete
-            boolean deleted = Files.deleteIfExists(docFile.toPath()); // Delete the file
-            if (deleted) {
-                System.out.println("[CollectionManager] Deleted document '" + documentId + "' from collection '" + collectionName + "'");
-            }
-            return deleted;
-        }
-        System.out.println("[CollectionManager] Document '" + documentId + "' not found for deletion in collection '" + collectionName + "'");
-        return false;
-    }
-
-    /**
      * Finds documents in this collection that match the provided JSON filter criteria.
-     * This implementation supports simple equality matching on top-level fields of the JSON filter.
-     * For example, a filter `{"name": "Alice", "age": 30}` will find documents where both 'name' is 'Alice'
-     * AND 'age' is '30'.
+     * This implementation now supports advanced equality matching as well as
+     * $gt, $lt, $ne, and $in operators on top-level fields.
      *
-     * @param filter The JsonNode representing the filter criteria (e.g., {"name": "Alice"}).
-     * Only object nodes are supported as filters.
+     * @param filter The JsonNode representing the filter criteria.
+     * Can be simple equality ({"field": "value"}) or with operators
+     * ({"age": {"$gt": 30}}).
      * @return A list of {@link JsonNode} documents that match all criteria in the filter.
      * @throws IOException If an I/O error occurs while reading documents.
+     * @throws IllegalArgumentException If the filter format is invalid (e.g., operator used with wrong value type).
      */
-    public List<JsonNode> findDocuments(JsonNode filter) throws IOException {
+    public List<JsonNode> findDocuments(JsonNode filter) throws IOException, IllegalArgumentException {
         List<JsonNode> matchingDocuments = new ArrayList<>();
-        List<JsonNode> allDocuments = getAllDocuments(); // First, retrieve all documents from the disk.
+        List<JsonNode> allDocuments = getAllDocuments();
 
-        // If the filter itself is not a JSON object, it's an invalid filter for equality matching.
-        if (!filter.isObject()) {
-            System.err.println("[CollectionManager] Warning by Vishwas Karode: Find filter must be a JSON object. No documents will match.");
-            return matchingDocuments; // Return empty list if filter is malformed.
+        if (filter == null || !filter.isObject()) {
+            // If filter is null or not an object, it means no specific filter is applied,
+            // or it's an invalid filter. Return all documents or throw error based on intent.
+            // For now, if it's not an object, we'll treat it as no matches for a proper filter.
+            // A null filter would imply getAllDocuments, but that path is handled by interpreter directly.
+            System.err.println("[CollectionManager] Warning by Vishwas Karode: Find filter must be a JSON object (or null for SELECT ALL). No documents will match this malformed filter.");
+            return matchingDocuments;
         }
 
-        // Iterate through each document found in the collection.
         for (JsonNode document : allDocuments) {
             boolean matches = true; // Assume document matches until a mismatch is found.
 
             // Iterate through each field in the filter JSON.
-            // All fields in the filter must match corresponding fields in the document.
+            // All top-level filter fields must match (logical AND).
             for (java.util.Iterator<String> fieldNames = filter.fieldNames(); fieldNames.hasNext(); ) {
-                String fieldName = fieldNames.next();
-                // Check if the document has the field AND if the value of that field matches the filter's value.
-                if (document.has(fieldName) && document.get(fieldName).equals(filter.get(fieldName))) {
-                    // This field matches, continue to the next filter field.
-                } else {
-                    // This field does not match, so the entire document does not match the filter.
+                String filterField = fieldNames.next();
+                JsonNode filterValue = filter.get(filterField);
+
+                if (!document.has(filterField)) {
+                    // Document doesn't have the field specified in the filter.
                     matches = false;
-                    break; // No need to check other fields for this document.
+                    break;
+                }
+
+                JsonNode documentValue = document.get(filterField);
+
+                // Handle operator-based filters (e.g., {"age": {"$gt": 30}})
+                if (filterValue.isObject() && filterValue.size() == 1) { // Check if it's an operator object
+                    String operator = filterValue.fieldNames().next(); // Get the single operator field name
+                    JsonNode operatorValue = filterValue.get(operator);
+
+                    switch (operator) {
+                        case DBConstants.GT_OPERATOR: // $gt (Greater Than)
+                            if (!isNumericComparison(documentValue, operatorValue) || !(documentValue.asDouble() > operatorValue.asDouble())) {
+                                matches = false;
+                            }
+                            break;
+                        case DBConstants.LT_OPERATOR: // $lt (Less Than)
+                            if (!isNumericComparison(documentValue, operatorValue) || !(documentValue.asDouble() < operatorValue.asDouble())) {
+                                matches = false;
+                            }
+                            break;
+                        case DBConstants.NE_OPERATOR: // $ne (Not Equal To)
+                            if (documentValue.equals(operatorValue)) {
+                                matches = false; // Match if values are NOT equal
+                            }
+                            break;
+                        case DBConstants.IN_OPERATOR: // $in (Value is in an array)
+                            if (!operatorValue.isArray()) {
+                                throw new IllegalArgumentException("'$in' operator value must be an array for field '" + filterField + "'. (Error by Vishwas Karode)");
+                            }
+                            boolean foundInArray = false;
+                            for (JsonNode item : (ArrayNode) operatorValue) {
+                                if (documentValue.equals(item)) {
+                                    foundInArray = true;
+                                    break;
+                                }
+                            }
+                            if (!foundInArray) {
+                                matches = false;
+                            }
+                            break;
+                        default:
+                            // Unknown operator or malformed operator object, treat as non-match
+                            System.err.println("[CollectionManager] Warning: Unknown operator '" + operator + "' for field '" + filterField + "'. Treating as non-match. (Vishwas Karode)");
+                            matches = false;
+                            break;
+                    }
+                } else {
+                    // Simple equality matching (e.g., {"name": "Alice"})
+                    if (!documentValue.equals(filterValue)) {
+                        matches = false;
+                    }
+                }
+
+                if (!matches) {
+                    break; // If any field doesn't match, this document is excluded.
                 }
             }
 
-            // If all filter fields matched, add the document to our results.
             if (matches) {
                 matchingDocuments.add(document);
             }
         }
-        System.out.println("[CollectionManager] Found " + matchingDocuments.size() + " documents matching filter in collection '" + collectionName + "'");
+        System.out.println("[CollectionManager] Found " + matchingDocuments.size() + " documents matching filter in collection '" + collectionName + "' by Vishwas Karode.");
         return matchingDocuments;
     }
+
+    /**
+     * Helper method to check if two JsonNodes are suitable for numeric comparison.
+     * @param node1 The first JsonNode.
+     * @param node2 The second JsonNode.
+     * @return true if both nodes are numeric, false otherwise.
+     */
+    private boolean isNumericComparison(JsonNode node1, JsonNode node2) {
+        return node1.isNumber() && node2.isNumber();
+    }
+
 
     /**
      * Updates documents within this collection that match the given filter with the provided update data.
@@ -230,32 +302,32 @@ public class CollectionManager {
      * @param updateData The JsonNode containing fields and values to set or overwrite in the matching documents.
      * @return The number of documents that were successfully updated.
      * @throws IOException If an I/O error occurs during document reading or writing.
+     * @throws IllegalArgumentException If the filter or updateData format is invalid.
      */
-    public int updateDocuments(JsonNode filter, JsonNode updateData) throws IOException {
+    public int updateDocuments(JsonNode filter, JsonNode updateData) throws IOException, IllegalArgumentException {
         int updatedCount = 0;
-        // Step 1: Find all documents that need to be updated.
+        // Step 1: Find all documents that need to be updated using the now-enhanced findDocuments.
         List<JsonNode> documentsToUpdate = findDocuments(filter);
 
         if (!updateData.isObject()) {
-            System.err.println("[CollectionManager] Warning by Vishwas Karode: Update data must be a JSON object. No updates applied.");
-            return 0; // Return 0 if updateData is malformed.
+            throw new IllegalArgumentException("Update data must be a JSON object for updateDocuments. (Error by Vishwas Karode)");
         }
 
         // Step 2: Iterate through each matching document and apply updates.
         for (JsonNode document : documentsToUpdate) {
             String docId = document.get(DBConstants.ID_FIELD_NAME).asText(); // Get the unique ID of the document.
             // Cast the JsonNode to an ObjectNode to allow modification (Jackson's tree model).
-            ObjectNode mutableDocument = (ObjectNode) document;
+            // Using JsonUtil.toMutableObjectNode ensures a mutable copy
+            JsonNode mutableDocument = JsonUtil.toMutableObjectNode(document);
 
             // Apply updates: Iterate through fields in updateData and set them in the document.
             // This performs a shallow merge (top-level fields only).
             for (java.util.Iterator<String> fieldNames = updateData.fieldNames(); fieldNames.hasNext(); ) {
                 String fieldName = fieldNames.next();
-                mutableDocument.set(fieldName, updateData.get(fieldName));
+                ((com.fasterxml.jackson.databind.node.ObjectNode) mutableDocument).set(fieldName, updateData.get(fieldName));
             }
 
             // Step 3: Write the modified document back to its file, overwriting the old content.
-            // Reusing updateDocument method, which handles the file writing and logging.
             if (updateDocument(docId, JsonUtil.toJson(mutableDocument))) {
                 updatedCount++; // Increment counter if update was successful.
             }
@@ -272,10 +344,11 @@ public class CollectionManager {
      * @param filter The JsonNode representing the criteria to select documents for deletion.
      * @return The number of documents that were successfully deleted.
      * @throws IOException If an I/O error occurs during document reading or deletion.
+     * @throws IllegalArgumentException If the filter format is invalid.
      */
-    public int deleteDocuments(JsonNode filter) throws IOException {
+    public int deleteDocuments(JsonNode filter) throws IOException, IllegalArgumentException {
         int deletedCount = 0;
-        // Step 1: Find all documents that need to be deleted.
+        // Step 1: Find all documents that need to be deleted using the now-enhanced findDocuments.
         List<JsonNode> documentsToDelete = findDocuments(filter);
 
         // Step 2: Iterate through each matching document and delete it.
@@ -291,10 +364,12 @@ public class CollectionManager {
     }
 
     /**
-     * Returns the name of this collection.
-     * @return The collection name.
+     * Helper method to get the Path object for a document's file.
+     *
+     * @param id The _id of the document.
+     * @return The Path to the document's file.
      */
-    public String getCollectionName() {
-        return collectionName;
+    private Path getDocumentPath(String id) {
+        return collectionPath.resolve(id + DBConstants.DOCUMENT_FILE_EXTENSION);
     }
 }
