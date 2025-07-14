@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -20,8 +21,9 @@ import java.util.stream.Stream;
  * It handles the initialization of the database root directory,
  * loading of existing collections, and providing methods to
  * create, retrieve, and delete collections.
+ * This version ensures compatibility with the updated CollectionManager constructor.
  */
-public class DBManager {
+public class DBManager { // Renamed from DbManager
 
     private final Path dbRootPath; // The file system path to the root directory of the database
     // In-memory map to quickly access CollectionManager instances by their collection name.
@@ -29,14 +31,14 @@ public class DBManager {
     private final Map<String, CollectionManager> collections = new HashMap<>();
 
     /**
-     * Constructor for DbManager.
+     * Constructor for DBManager.
      * Initializes the database by ensuring the root directory exists and loading any existing collections.
      * @throws IOException If an I/O error occurs during directory operations.
      */
     public DBManager() throws IOException {
         // Resolve the absolute path for the database root directory.
         // It will be created relative to where the application is run.
-        this.dbRootPath = Paths.get(DBConstants.DB_ROOT_DIR);
+        this.dbRootPath = Paths.get(DBConstants.DB_ROOT_DIR); // Using DBConstants
         initDbRoot(); // Ensure the physical root directory is set up
         loadExistingCollections(); // Populate the in-memory 'collections' map with existing ones
     }
@@ -49,28 +51,32 @@ public class DBManager {
     private void initDbRoot() throws IOException {
         if (!Files.exists(dbRootPath)) {
             Files.createDirectories(dbRootPath); // Create the directory
-            System.out.println("[DbManager] LAMB DB root directory created: " + dbRootPath.toAbsolutePath());
+            System.out.println("[DBManager] LAMB DB root directory created: " + dbRootPath.toAbsolutePath());
         } else {
-            System.out.println("[DbManager] LAMB DB root directory already exists: " + dbRootPath.toAbsolutePath());
+            System.out.println("[DBManager] LAMB DB root directory already exists: " + dbRootPath.toAbsolutePath());
         }
     }
 
     /**
      * Scans the database root directory for existing collection directories
      * and loads them into the in-memory 'collections' map.
-     * This ensures that when DbManager starts, it's aware of all previously created collections.
+     * This ensures that when DBManager starts, it's aware of all previously created collections.
      * @throws IOException If an I/O error occurs during directory listing.
      */
     private void loadExistingCollections() throws IOException {
-        // List all directories directly under the DB root path
         try (Stream<Path> paths = Files.list(dbRootPath)) {
-            paths.filter(Files::isDirectory) // Only process directories (which represent collections)
+            paths.filter(Files::isDirectory)
                     .forEach(path -> {
-                        String collectionName = path.getFileName().toString();
-                        // Create a CollectionManager for each found directory
-                        CollectionManager manager = new CollectionManager(collectionName, dbRootPath);
-                        collections.put(collectionName, manager); // Add to our in-memory map
-                        System.out.println("[DbManager] Loaded existing collection: '" + collectionName + "'");
+                        String collectionNameFromFileSystem = path.getFileName().toString();
+                        try {
+                            // FIX: Canonicalize collection name from file system to lowercase
+                            String canonicalCollectionName = collectionNameFromFileSystem.toLowerCase(Locale.ROOT);
+                            CollectionManager manager = new CollectionManager(canonicalCollectionName, dbRootPath.toString());
+                            collections.put(canonicalCollectionName, manager); // Add to our in-memory map using lowercase name
+                            System.out.println("[DBManager] Loaded existing collection: '" + canonicalCollectionName + "'");
+                        } catch (IOException e) {
+                            System.err.println("[DBManager] Error loading collection '" + collectionNameFromFileSystem + "': " + e.getMessage());
+                        }
                     });
         }
     }
@@ -88,7 +94,7 @@ public class DBManager {
     public CollectionManager createCollection(String collectionName) throws IOException {
         // Check if the collection is already loaded in memory
         if (collections.containsKey(collectionName)) {
-            System.out.println("[DbManager] Collection '" + collectionName + "' already exists in memory.");
+            System.out.println("[DBManager] Collection '" + collectionName + "' already exists in memory.");
             return collections.get(collectionName);
         }
 
@@ -98,11 +104,11 @@ public class DBManager {
             throw new IllegalArgumentException("Cannot create collection. A file with name '" + collectionName + "' already exists in the database root.");
         }
 
-        // Create a new CollectionManager and initialize its directory.
-        CollectionManager manager = new CollectionManager(collectionName, dbRootPath);
-        manager.init(); // This will create the physical directory if it doesn't exist.
+        // Create a new CollectionManager. Its constructor now handles directory creation.
+        // Pass dbRootPath.toString() to match CollectionManager's constructor.
+        CollectionManager manager = new CollectionManager(collectionName, dbRootPath.toString());
         collections.put(collectionName, manager); // Add to our in-memory map
-        System.out.println("[DbManager] Collection '" + collectionName + "' created/initialized.");
+        System.out.println("[DBManager] Collection '" + collectionName + "' created/initialized.");
         return manager;
     }
 
@@ -143,10 +149,10 @@ public class DBManager {
 
             // Remove from our in-memory map
             collections.remove(collectionName);
-            System.out.println("[DbManager] Collection '" + collectionName + "' and its contents deleted.");
+            System.out.println("[DBManager] Collection '" + collectionName + "' and its contents deleted.");
             return true;
         }
-        System.out.println("[DbManager] Collection '" + collectionName + "' not found for deletion.");
+        System.out.println("[DBManager] Collection '" + collectionName + "' not found for deletion.");
         return false;
     }
 }

@@ -2,44 +2,30 @@ package com.lambdb.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.UUID;
 
 /**
  * JsonUtil.java
  * Author: Vishwas Karode
  * Description:
- * A utility class for handling JSON serialization and deserialization using the Jackson library.
- * It provides methods to convert Java objects to/from JSON strings and files,
- * and to manage the '_id' field for documents.
+ * Utility class for JSON serialization and deserialization using Jackson.
+ * Provides helper methods to convert between JSON strings and JsonNode objects,
+ * to manage the '_id' field, and to format JSON output.
+ * The ObjectMapper instance is public for broader access across the application.
  */
 public class JsonUtil {
 
-    // ObjectMapper is thread-safe and should be reused for performance.
-    // It's the core component of Jackson for performing conversions.
-    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    // Public ObjectMapper for consistent JSON processing throughout the application.
+    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .enable(SerializationFeature.INDENT_OUTPUT); // Enable pretty printing for readability
 
     /**
-     * Converts any Java object into a pretty-printed JSON string.
-     * This is useful for storing documents in a human-readable format.
-     *
-     * @param obj The Java object to convert to JSON.
-     * @return A formatted JSON string representation of the object.
-     * @throws IOException If there's an error during JSON serialization (e.g., invalid object structure).
-     */
-    public static String toJson(Object obj) throws IOException {
-        return OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
-    }
-
-    /**
-     * Parses a JSON string into a Jackson JsonNode object.
-     * JsonNode provides a tree-model representation of JSON, allowing easy navigation and modification.
-     *
+     * Converts a JSON string to a JsonNode object.
      * @param jsonString The JSON string to parse.
-     * @return A JsonNode representing the parsed JSON structure.
+     * @return A JsonNode representation of the JSON string.
      * @throws IOException If the JSON string is malformed.
      */
     public static JsonNode fromJsonString(String jsonString) throws IOException {
@@ -47,43 +33,44 @@ public class JsonUtil {
     }
 
     /**
-     * Reads a JSON document from a specified file and parses it into a JsonNode.
-     *
-     * @param file The File object pointing to the JSON document.
-     * @return A JsonNode representing the content of the file.
-     * @throws IOException If an I/O error occurs during file reading or JSON parsing.
+     * Converts a JsonNode object to a compact JSON string.
+     * @param jsonNode The JsonNode to convert.
+     * @return A compact JSON string.
+     * @throws IOException If conversion fails.
      */
-    public static JsonNode fromJsonFile(File file) throws IOException {
-        return OBJECT_MAPPER.readTree(file);
+    public static String toJson(JsonNode jsonNode) throws IOException {
+        return OBJECT_MAPPER.writeValueAsString(jsonNode);
     }
 
     /**
-     * Writes a JsonNode object to a specified file as a pretty-printed JSON document.
-     *
-     * @param jsonNode The JsonNode to write to the file.
-     * @param file The target File object where the JSON will be written.
-     * @throws IOException If an I/O error occurs during file writing.
+     * Converts a JsonNode object to a pretty-printed JSON string.
+     * This method is essential for readable output in the console.
+     * @param jsonNode The JsonNode to convert.
+     * @return A pretty-printed JSON string.
+     * @throws IOException If conversion fails.
      */
-    public static void writeToFile(JsonNode jsonNode, File file) throws IOException {
-        OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValue(file, jsonNode);
+    public static String toPrettyJson(JsonNode jsonNode) throws IOException {
+        return OBJECT_MAPPER.writeValueAsString(jsonNode);
     }
 
     /**
-     * Ensures that a given JsonNode document has a unique '_id' field.
-     * If the document already has an '_id' field with a non-null value, it remains unchanged.
-     * Otherwise, a new UUID (Universally Unique Identifier) is generated and assigned as the '_id'.
-     * This is crucial for identifying documents uniquely within a collection.
-     *
-     * @param documentNode The JsonNode representing the document.
-     * @return The modified JsonNode with an '_id' field guaranteed to be present.
+     * Adds or updates the '_id' field in a JsonNode (document).
+     * This method creates a new ObjectNode if the original is not mutable.
+     * @param originalNode The original JsonNode document.
+     * @param id The ID string to set for the '_id' field.
+     * @return A new or modified ObjectNode with the '_id' field set.
      */
-    public static JsonNode ensureDocumentId(JsonNode documentNode) {
-        // Check if the document already has an '_id' field and if it's not null.
-        if (!documentNode.has(DBConstants.ID_FIELD_NAME) || documentNode.get(DBConstants.ID_FIELD_NAME).isNull()) {
-            // If not, cast to ObjectNode to allow modification and add a new UUID as _id.
-            ((ObjectNode) documentNode).put(DBConstants.ID_FIELD_NAME, UUID.randomUUID().toString());
+    public static ObjectNode addIdToNode(JsonNode originalNode, String id) {
+        ObjectNode mutableNode;
+        if (originalNode instanceof ObjectNode) {
+            mutableNode = (ObjectNode) originalNode;
+        } else {
+            // If it's not an ObjectNode, create a new one from its contents
+            mutableNode = OBJECT_MAPPER.createObjectNode();
+            originalNode.fields().forEachRemaining(entry -> mutableNode.set(entry.getKey(), entry.getValue()));
         }
-        return documentNode;
+        mutableNode.put(DBConstants.ID_FIELD_NAME, id);
+        return mutableNode;
     }
 
     /**
@@ -96,7 +83,6 @@ public class JsonUtil {
      */
     public static ObjectNode toMutableObjectNode(JsonNode node) {
         if (node.isObject()) {
-            // CORRECTED LINE: Using our OBJECT_MAPPER instance
             return (ObjectNode) OBJECT_MAPPER.valueToTree(node);
         }
         throw new IllegalArgumentException("Provided JsonNode is not an object and cannot be converted to a mutable ObjectNode.");
