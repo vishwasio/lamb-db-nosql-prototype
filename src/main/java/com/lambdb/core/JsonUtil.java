@@ -20,7 +20,7 @@ public class JsonUtil {
 
     // ObjectMapper is thread-safe and should be reused for performance.
     // It's the core component of Jackson for performing conversions.
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * Converts any Java object into a pretty-printed JSON string.
