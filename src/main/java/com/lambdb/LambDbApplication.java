@@ -1,22 +1,18 @@
 package com.lambdb;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.lambdb.core.DBConstants; // Corrected import
-import com.lambdb.core.DBManager;   // Corrected import
-import com.lambdb.core.collection.CollectionManager; // Still in core.collection
+import com.lambdb.core.DBManager;         // Corrected import
+import com.lambdb.core.LambDbInterpreter; // New import
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * LambDbApplication.java
  * Author: Vishwas Karode
  * Description:
  * This is the main application class for the LAMB DB NoSQL prototype.
- * It serves as a demonstration of how to interact with the database using its
- * direct Java API. This class performs various CRUD (Create, Retrieve, Update, Delete)
- * operations on collections and documents, showcasing the core functionalities developed.
+ * It now demonstrates the use of the LAMBQL Interpreter, allowing interaction
+ * with the database through custom query language commands.
+ * This provides a higher-level, more "database-like" experience.
  *
  * This application will create a 'lambdb_data' directory in its running location
  * to store all database files.
@@ -29,132 +25,77 @@ public class LambDbApplication {
      */
     public static void main(String[] args) {
         try {
-            // --- Phase 1: Core Setup & Basic Document Storage Demo ---
+            // --- Phase 2: LAMBQL Interpreter Demo ---
 
             // 1. Initialize the Database Manager
-            // The DBManager is the central orchestrator for the database.
-            // It ensures the root directory exists and loads any pre-existing collections.
-            System.out.println("\n--- Initializing LAMB DB by Vishwas Karode ---");
-            DBManager dbManager = new DBManager(); // Using the new DBManager class
+            System.out.println("\n--- Initializing LAMB DB System by Vishwas Karode ---");
+            DBManager dbManager = new DBManager(); // Our core DB management component
 
-            // 2. Create a Collection: "users"
-            // Collections in LAMB DB are analogous to tables in relational databases
-            // or collections in other NoSQL document databases like MongoDB.
-            // They are represented as directories on the file system.
-            System.out.println("\n--- Creating 'users' collection ---");
-            // If the 'users' collection already exists, DBManager will return the existing manager.
-            CollectionManager usersCollection = dbManager.createCollection("users");
-            System.out.println("Collection 'users' is ready for operations.");
+            // 2. Initialize the LAMBQL Interpreter
+            // The interpreter bridges the gap between LAMBQL commands and the underlying DBManager.
+            LambDbInterpreter interpreter = new LambDbInterpreter(dbManager);
 
-            // 3. Insert Documents into the "users" Collection
-            // Documents are JSON objects. LAMB DB stores them as individual .json files.
-            // Each document will have a unique '_id' field. If not provided, LAMB DB generates one.
-            System.out.println("\n--- Inserting documents into 'users' collection ---");
+            System.out.println("\n--- Starting LAMBQL Command Execution Demo ---");
 
-            // Document 1: Without a predefined '_id'. LAMB DB will assign a UUID.
-            String user1Json = "{\"name\": \"Alice\", \"age\": 30, \"city\": \"New York\"}";
-            String id1 = usersCollection.insertDocument(user1Json);
-            System.out.println("User 1 inserted with generated ID: " + id1);
+            // --- LAMBQL Commands ---
 
-            // Document 2: With a predefined '_id'. This allows external systems to manage IDs.
-            String user2Json = "{\"_id\": \"user_002_vk\", \"name\": \"Bob\", \"age\": 24, \"city\": \"London\"}";
-            String id2 = usersCollection.insertDocument(user2Json);
-            System.out.println("User 2 inserted with predefined ID: " + id2);
+            // 1. CREATE COLLECTION Command
+            System.out.println(interpreter.execute("CREATE COLLECTION users;"));
+            System.out.println(interpreter.execute("CREATE COLLECTION products;"));
+            System.out.println(interpreter.execute("CREATE COLLECTION orders;")); // Another collection for demonstration
 
-            // Document 3: Another document with generated ID, showcasing diverse data.
-            String user3Json = "{\"name\": \"Charlie\", \"country\": \"India\", \"isActive\": true}";
-            String id3 = usersCollection.insertDocument(user3Json);
-            System.out.println("User 3 inserted with generated ID: " + id3);
+            // 2. INSERT DOCUMENT Command
+            // Notice how the document data is passed as a JSON string directly in the query.
+            System.out.println(interpreter.execute("INSERT INTO users VALUES { \"name\": \"Alice\", \"age\": 30, \"city\": \"New York\", \"email\": \"alice@example.com\" };"));
+            System.out.println(interpreter.execute("INSERT INTO users VALUES { \"_id\": \"user_002_vk\", \"name\": \"Bob\", \"age\": 24, \"city\": \"London\", \"email\": \"bob@example.com\" };"));
+            System.out.println(interpreter.execute("INSERT INTO users VALUES { \"name\": \"Charlie\", \"age\": 35, \"city\": \"New York\", \"email\": \"charlie@example.com\" };"));
+            System.out.println(interpreter.execute("INSERT INTO products VALUES { \"productName\": \"Laptop\", \"price\": 1200, \"stock\": 50, \"category\": \"Electronics\" };"));
+            System.out.println(interpreter.execute("INSERT INTO products VALUES { \"productName\": \"Keyboard\", \"price\": 75, \"stock\": 200, \"category\": \"Peripherals\" };"));
 
-            // 4. Retrieve a Specific Document by its '_id'
-            System.out.println("\n--- Retrieving document with _id 'user_002_vk' ---");
-            Optional<JsonNode> retrievedUser2 = usersCollection.getDocument("user_002_vk");
-            if (retrievedUser2.isPresent()) {
-                System.out.println("Successfully retrieved User 2:\n" + retrievedUser2.get().toPrettyString());
-            } else {
-                System.out.println("User 2 not found (unexpected).");
-            }
+            // 3. SELECT ALL Documents Command
+            System.out.println(interpreter.execute("SELECT * FROM users;"));
+            System.out.println(interpreter.execute("SELECT * FROM products;"));
+            System.out.println(interpreter.execute("SELECT * FROM orders;")); // Should be empty
 
-            System.out.println("\n--- Attempting to retrieve a non-existent document 'nonexistent_user_id' ---");
-            Optional<JsonNode> nonExistentUser = usersCollection.getDocument("nonexistent_user_id");
-            if (nonExistentUser.isEmpty()) {
-                System.out.println("Result: Non-existent user not found, as expected. (Good job, Vishwas!)");
-            }
+            // 4. SELECT Documents with Filter (Equality based)
+            // The WHERE clause accepts a JSON object for simple equality filtering.
+            System.out.println(interpreter.execute("SELECT * FROM users WHERE {\"city\": \"New York\"};"));
+            System.out.println(interpreter.execute("SELECT * FROM users WHERE {\"age\": 24};")); // Should find Bob
+            System.out.println(interpreter.execute("SELECT * FROM products WHERE {\"category\": \"Electronics\"};"));
+            System.out.println(interpreter.execute("SELECT * FROM users WHERE {\"name\": \"NonExistent\"};")); // Should find no documents
 
-            // 5. Update an Existing Document
-            // When updating, the provided JSON string must include the '_id' of the document to be updated.
-            System.out.println("\n--- Updating document with ID '" + id1 + "' (Alice) ---");
-            String updatedUser1Json = "{\"_id\": \"" + id1 + "\", \"name\": \"Alice Smith\", \"age\": 31, \"city\": \"San Francisco\", \"occupation\": \"Software Engineer\"}";
-            boolean updatedStatus = usersCollection.updateDocument(id1, updatedUser1Json);
-            System.out.println("Document '" + id1 + "' update status: " + (updatedStatus ? "SUCCESS" : "FAILED"));
+            // 5. UPDATE Documents Command
+            // Targets documents using a WHERE clause and updates specified fields in the SET clause.
+            System.out.println(interpreter.execute("UPDATE users SET {\"age\": 31, \"status\": \"active\"} WHERE {\"name\": \"Alice\"};"));
+            System.out.println(interpreter.execute("SELECT * FROM users WHERE {\"name\": \"Alice\"};")); // Verify Alice's update
 
-            System.out.println("\n--- Retrieving updated document '" + id1 + "' to verify changes ---");
-            usersCollection.getDocument(id1).ifPresent(jsonNode -> System.out.println("Updated content:\n" + jsonNode.toPrettyString()));
+            System.out.println(interpreter.execute("UPDATE products SET {\"stock\": 150} WHERE {\"productName\": \"Laptop\"};"));
+            System.out.println(interpreter.execute("SELECT * FROM products WHERE {\"productName\": \"Laptop\"};")); // Verify Laptop update
 
+            // 6. DELETE Documents Command
+            // Deletes documents matching the WHERE clause.
+            System.out.println(interpreter.execute("DELETE FROM users WHERE {\"name\": \"Charlie\"};"));
+            System.out.println(interpreter.execute("SELECT * FROM users;")); // Verify Charlie is gone
 
-            // 6. Retrieve All Documents from the "users" Collection
-            System.out.println("\n--- Retrieving all documents from 'users' collection ---");
-            List<JsonNode> allUsers = usersCollection.getAllDocuments();
-            System.out.println("Total documents currently in 'users' collection: " + allUsers.size());
-            allUsers.forEach(jsonNode ->
-                    System.out.println("  - Document ID: " + jsonNode.get(DBConstants.ID_FIELD_NAME).asText() + "\n" + jsonNode.toPrettyString() + "\n---")
-            );
+            System.out.println(interpreter.execute("DELETE FROM products WHERE {\"price\": 75};")); // Delete Keyboard
+            System.out.println(interpreter.execute("SELECT * FROM products;")); // Verify Keyboard is gone
 
+            // 7. DELETE COLLECTION Command (entire collection and its data)
+            System.out.println(interpreter.execute("DELETE FROM orders;")); // Delete empty orders collection
+            System.out.println(interpreter.execute("DELETE FROM products;")); // Delete remaining products collection
 
-            // 7. Delete a Specific Document
-            System.out.println("\n--- Deleting document with ID '" + id3 + "' (Charlie) ---");
-            boolean deletedStatus = usersCollection.deleteDocument(id3);
-            System.out.println("Document '" + id3 + "' deletion status: " + (deletedStatus ? "SUCCESS" : "FAILED"));
-
-            System.out.println("\n--- All documents after deletion of '" + id3 + "' ---");
-            List<JsonNode> remainingUsers = usersCollection.getAllDocuments();
-            System.out.println("Total documents remaining in 'users' collection: " + remainingUsers.size());
-            remainingUsers.forEach(jsonNode ->
-                    System.out.println("  - Document ID: " + jsonNode.get(DBConstants.ID_FIELD_NAME).asText() + "\n" + jsonNode.toPrettyString() + "\n---")
-            );
-
-            // 8. Demonstrate Collection Creation and Deletion
-            System.out.println("\n--- Creating 'products' collection for deletion demo ---");
-            CollectionManager productsCollection = dbManager.createCollection("products");
-            productsCollection.insertDocument("{\"productName\": \"Laptop\", \"price\": 1200.00, \"category\": \"Electronics\"}");
-            productsCollection.insertDocument("{\"productName\": \"Mouse\", \"price\": 25.00, \"category\": \"Electronics\"}");
-            System.out.println("Products inserted. Total products in 'products' collection: " + productsCollection.getAllDocuments().size());
-
-            System.out.println("\n--- Deleting 'products' collection entirely ---");
-            boolean productsCollectionDeleted = dbManager.deleteCollection("products");
-            System.out.println("Collection 'products' deleted status: " + (productsCollectionDeleted ? "SUCCESS" : "FAILED"));
-
-            // Verify 'products' collection is gone from the in-memory map
-            if (dbManager.getCollection("products").isEmpty()) {
-                System.out.println("Verification: 'products' collection is indeed gone from DBManager's awareness.");
-            }
-
-            // Uncomment the following lines to also delete the 'users' collection at the end of the demo.
-            // This cleans up all data created by the application run.
-            System.out.println("\n--- Deleting 'users' collection for cleanup ---");
-            boolean usersCollectionCleanupStatus = dbManager.deleteCollection("users");
-            System.out.println("Collection 'users' cleanup status: " + (usersCollectionCleanupStatus ? "SUCCESS" : "FAILED"));
-            if (dbManager.getCollection("users").isEmpty()) {
-                System.out.println("Verification: 'users' collection is indeed gone for cleanup.");
-            }
-
-
-            System.out.println("\n--- LAMB DB Phase 1 Demo Complete by Vishwas Karode ---");
+            System.out.println("\n--- LAMBQL Command Execution Demo Complete by Vishwas Karode ---");
 
         } catch (IOException e) {
             // Catch specific I/O errors that might occur during file operations
-            System.err.println("❌ An I/O error occurred during LAMB DB operation: " + e.getMessage());
+            System.err.println("❌ An I/O error occurred during LAMB DB operation (by Vishwas Karode): " + e.getMessage());
             e.printStackTrace(); // Print full stack trace for debugging purposes
-        } catch (IllegalArgumentException e) {
-            // Catch errors related to invalid arguments, like trying to insert duplicate _id
-            System.err.println("❌ A database argument error occurred: " + e.getMessage());
-            e.printStackTrace();
         } catch (Exception e) {
-            // Catch any other unexpected exceptions
-            System.err.println("❌ An unexpected error occurred: " + e.getMessage());
+            // Catch any other unexpected exceptions during application startup or interpreter initialization
+            System.err.println("❌ An unexpected critical error occurred (by Vishwas Karode): " + e.getMessage());
             e.printStackTrace();
         } finally {
-            System.out.println("\n(Note: Check your project directory for the 'lambdb_data' folder and its contents.)");
+            System.out.println("\n(Note from Vishwas Karode: 'lambdb_data' directory should be empty after this run, or contain only remnants from previous incomplete runs.)");
         }
     }
 }

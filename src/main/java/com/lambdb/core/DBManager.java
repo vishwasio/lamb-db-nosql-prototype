@@ -13,7 +13,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * DbManager.java
+ * DBManager.java
  * Author: Vishwas Karode
  * Description:
  * The central manager for the LAMB DB NoSQL prototype.

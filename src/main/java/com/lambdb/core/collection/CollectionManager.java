@@ -174,6 +174,123 @@ public class CollectionManager {
     }
 
     /**
+     * Finds documents in this collection that match the provided JSON filter criteria.
+     * This implementation supports simple equality matching on top-level fields of the JSON filter.
+     * For example, a filter `{"name": "Alice", "age": 30}` will find documents where both 'name' is 'Alice'
+     * AND 'age' is '30'.
+     *
+     * @param filter The JsonNode representing the filter criteria (e.g., {"name": "Alice"}).
+     * Only object nodes are supported as filters.
+     * @return A list of {@link JsonNode} documents that match all criteria in the filter.
+     * @throws IOException If an I/O error occurs while reading documents.
+     */
+    public List<JsonNode> findDocuments(JsonNode filter) throws IOException {
+        List<JsonNode> matchingDocuments = new ArrayList<>();
+        List<JsonNode> allDocuments = getAllDocuments(); // First, retrieve all documents from the disk.
+
+        // If the filter itself is not a JSON object, it's an invalid filter for equality matching.
+        if (!filter.isObject()) {
+            System.err.println("[CollectionManager] Warning by Vishwas Karode: Find filter must be a JSON object. No documents will match.");
+            return matchingDocuments; // Return empty list if filter is malformed.
+        }
+
+        // Iterate through each document found in the collection.
+        for (JsonNode document : allDocuments) {
+            boolean matches = true; // Assume document matches until a mismatch is found.
+
+            // Iterate through each field in the filter JSON.
+            // All fields in the filter must match corresponding fields in the document.
+            for (java.util.Iterator<String> fieldNames = filter.fieldNames(); fieldNames.hasNext(); ) {
+                String fieldName = fieldNames.next();
+                // Check if the document has the field AND if the value of that field matches the filter's value.
+                if (document.has(fieldName) && document.get(fieldName).equals(filter.get(fieldName))) {
+                    // This field matches, continue to the next filter field.
+                } else {
+                    // This field does not match, so the entire document does not match the filter.
+                    matches = false;
+                    break; // No need to check other fields for this document.
+                }
+            }
+
+            // If all filter fields matched, add the document to our results.
+            if (matches) {
+                matchingDocuments.add(document);
+            }
+        }
+        System.out.println("[CollectionManager] Found " + matchingDocuments.size() + " documents matching filter in collection '" + collectionName + "'");
+        return matchingDocuments;
+    }
+
+    /**
+     * Updates documents within this collection that match the given filter with the provided update data.
+     * This method first finds all matching documents using {@link #findDocuments(JsonNode)},
+     * then applies the `updateData` (merging top-level fields), and finally overwrites the original files.
+     *
+     * @param filter The JsonNode representing the criteria to select documents for update.
+     * @param updateData The JsonNode containing fields and values to set or overwrite in the matching documents.
+     * @return The number of documents that were successfully updated.
+     * @throws IOException If an I/O error occurs during document reading or writing.
+     */
+    public int updateDocuments(JsonNode filter, JsonNode updateData) throws IOException {
+        int updatedCount = 0;
+        // Step 1: Find all documents that need to be updated.
+        List<JsonNode> documentsToUpdate = findDocuments(filter);
+
+        if (!updateData.isObject()) {
+            System.err.println("[CollectionManager] Warning by Vishwas Karode: Update data must be a JSON object. No updates applied.");
+            return 0; // Return 0 if updateData is malformed.
+        }
+
+        // Step 2: Iterate through each matching document and apply updates.
+        for (JsonNode document : documentsToUpdate) {
+            String docId = document.get(DBConstants.ID_FIELD_NAME).asText(); // Get the unique ID of the document.
+            // Cast the JsonNode to an ObjectNode to allow modification (Jackson's tree model).
+            ObjectNode mutableDocument = (ObjectNode) document;
+
+            // Apply updates: Iterate through fields in updateData and set them in the document.
+            // This performs a shallow merge (top-level fields only).
+            for (java.util.Iterator<String> fieldNames = updateData.fieldNames(); fieldNames.hasNext(); ) {
+                String fieldName = fieldNames.next();
+                mutableDocument.set(fieldName, updateData.get(fieldName));
+            }
+
+            // Step 3: Write the modified document back to its file, overwriting the old content.
+            // Reusing updateDocument method, which handles the file writing and logging.
+            if (updateDocument(docId, JsonUtil.toJson(mutableDocument))) {
+                updatedCount++; // Increment counter if update was successful.
+            }
+        }
+        System.out.println("[CollectionManager] Updated " + updatedCount + " documents matching filter in collection '" + collectionName + "'. (Action by Vishwas Karode)");
+        return updatedCount;
+    }
+
+    /**
+     * Deletes documents from this collection that match the given filter.
+     * This method first finds all matching documents using {@link #findDocuments(JsonNode)},
+     * then deletes their corresponding files from the file system.
+     *
+     * @param filter The JsonNode representing the criteria to select documents for deletion.
+     * @return The number of documents that were successfully deleted.
+     * @throws IOException If an I/O error occurs during document reading or deletion.
+     */
+    public int deleteDocuments(JsonNode filter) throws IOException {
+        int deletedCount = 0;
+        // Step 1: Find all documents that need to be deleted.
+        List<JsonNode> documentsToDelete = findDocuments(filter);
+
+        // Step 2: Iterate through each matching document and delete it.
+        for (JsonNode document : documentsToDelete) {
+            String docId = document.get(DBConstants.ID_FIELD_NAME).asText(); // Get the unique ID.
+            // Reusing deleteDocument method, which handles the file deletion and logging.
+            if (deleteDocument(docId)) {
+                deletedCount++; // Increment counter if deletion was successful.
+            }
+        }
+        System.out.println("[CollectionManager] Deleted " + deletedCount + " documents matching filter from collection '" + collectionName + "'. (Action by Vishwas Karode)");
+        return deletedCount;
+    }
+
+    /**
      * Returns the name of this collection.
      * @return The collection name.
      */
