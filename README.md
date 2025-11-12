@@ -46,7 +46,7 @@ To get LambDB up and running on your system:
 
 ### 1. Download the Executable JAR
 
-The quickest way to start is by downloading the latest pre-built executable JAR file from the [Releases](https://github.com/awkward-student/LambDB-NoSQL-Prototype/releases) section of this repository.
+The quickest way to start is by downloading the latest pre-built executable JAR file from the [Releases](https://github.com/vishwasio/LambDB-NoSQL-Prototype/releases) section of this repository.
 
 * Download `lambdb-nosql-prototype-1.0.0-SNAPSHOT.jar`.
 
@@ -80,7 +80,7 @@ If you wish to delve into the codebase or build the project from its source:
 ### 1. Clone the repository:
 
 ```bash
-git clone [https://github.com/awkward-student/LambDB-NoSQL-Prototype.git](https://github.com/awkward-student/LambDB-NoSQL-Prototype.git)
+git clone https://github.com/vishwasio/LambDB-NoSQL-Prototype.git
 cd LambDB-NoSQL-Prototype
 ```
 
@@ -100,4 +100,4 @@ Contributions are highly welcome! If you encounter any bugs, have suggestions fo
 
 ## 📄 License
 
-This project is open-source and distributed under the MIT License.
+This project is open and distributed under the MIT License.
